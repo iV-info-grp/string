@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>👉你睇我唔到👈 ver.5</title>
+</head>
+<style>
+  .fs {
+    width: 99%;
+  }
+</style>
+
+<body>
+  <div id="ef" style="display: inline;">
+    <button class="fs" id="dc" onclick="tabChange(this)">切换至 解码</button>
+    <h4>本程序用于隐藏信息于公开平台，没有网络请求可直接保存html本地运行</br>
+      请勿将此编码工具当作加密工具，对保密程度要求高的隐写内容强烈建议为加密</h4>
+    <form autocomplete="off" onsubmit="return false;">
+      <div>
+        密码<input id="pwd" oninput="PwdChange(this)">(小聪明如果你干杀头的事别用1234或qwer或为空之类的密码)
+        噪音<input type="range" id="lv" min="0" max="100" step="1" value="3"
+          onchange="dp.value=this.value;lvChange(this)">
+        <output id="dp" for="lv"></output>(噪声程度越大结果内容越大对抗分析越好)
+        <button onclick="clearAll()">清空</button>
+        <p id="cl">文本</p>
+      </div>
+      <div>
+        <textarea class="fs" id="txt" rows="10" oninput="changetxt(this)"></textarea>
+      </div>
+      <div>
+        <p id="ht">隐写内容(强烈建议为已加密内容)
+          <input type="file" id="fileInput">
+          <progress id="pro" value="0"></progress>
+        </p>
+        <textarea class="fs" id="htxt" oninput="changetxt(this)"></textarea>
+        <img id="img" style="height: 100px;width: 100px;display: none;" />
+      </div>
+      </br>
+      <div>
+        <button class="fs" onclick="cp(this)" id="ecp">复制</button>
+        <textarea class="fs" id="stxt"></textarea>
+      </div>
+    </form>
+  </div>
+
+  <div id="df" style="display: none;">
+    <button class="fs" id="ec" onclick="tabChange(this)">切换至 编码</button>
+    <h4>本程序用于解码隐藏信息，没有网络请求可直接保存html本地运行</h4>
+    <form autocomplete="off" onsubmit="return false;">
+      密码<input oninput="PwdChange(this)">
+      <button onclick="clearAll()">清空</button>
+      <input type="radio" id="txt" name="mode" onclick="optChange('txt')" checked="true">
+      <label for="txt">文字 </label>
+      <input type="radio" id="file" name="mode" onclick="optChange('blob')">
+      <label for="file">文件</label>
+    </form>
+
+    <div>
+      <p>文本</p>
+      <textarea class="fs" id="dstxt" onchange="changetxt(this)"></textarea>
+    </div>
+    <div>
+      <p>隐写内容 </p>
+      <textarea class="fs" id="rstxt"></textarea>
+    </div>
+  </div>
+</body>
+
+<script>
+  class RNG {
+    _m = 0x80000000;
+    _a = 1103515245;
+    _c = 12345;
+    _state = 0;
+    constructor(seed) {
+      this._state = seed ? seed : Math.floor(Math.random() * (this.m - 1));
+    }
+
+    nextRange = function (end, start = 0) {
+      this._state = (this._a * this._state + this._c) % this._m;
+      return start + Math.floor(this._state / this._m * (end - start));
+    }
+
+    choice(arr) {
+      return this.nextRange(arr.length);
+    }
+  }
+
+  class Messenger {
+    _salt = "author_" + "编程远去，随想不灭-js00000001-ver.5";
+    _stdCs = [173, "6068-6069", "6155-6158", "8203-8207", "8234-8238",
+      "8288-8303", "65024-65039", 65279, "119155-119162", 917505,
+      "917536-917631", "917760-917999"];
+    _oc = ["8206-8207", "8234-8238", "8294-8297", 65279,
+      "6155-6158", 8292, "917505-917600", "917627-917630"];
+    _stdB64 = ["65-90", "97-122", "48-57", 43, 47];
+    _stdB32 = ["65-90", "50-55"];
+    _stdNoise = [];
+    _b64 = [];
+    _b32 = [];
+    _bx = 32;
+    _mode = "full";
+    _pwd = "";
+    _lv = 0;
+    _fiSalt = 0;
+    _fNoise = [];
+    _fCodes = [];
+    _idx = [];
+    _codes = [];
+    _noise = [];
+    _rng = null;
+
+    _crypto = window.crypto || window.webkitCrypto ||
+      window.mozCrypto || window.oCrypto || window.msCrypto;
+
+    constructor(pwd = "") {
+      this._init();
+      this.setPwd(pwd);
+    }
+
+    _init() {
+      this._stdNoise = this._unZip(this._stdCs);
+      const ocs = this._unZip(this._oc);
+      this._stdNoise.filter(x => new Set(ocs).has(x)).forEach((v, k) => {
+        let idx = this._stdNoise.indexOf(v);
+        if (idx > -1) this._stdNoise.splice(idx, 1);
+      });
+      for (let v of this._unZip(this._stdB64)) this._b64.push(String.fromCharCode(v));
+      for (let v of this._unZip(this._stdB32)) this._b32.push(String.fromCharCode(v));
+    }
+
+    _getNoises(size, ifile = false) {
+      let noise = this[ifile ? '_fnoise' : '_noise'];
+      if (typeof (size) === "number" || size === undefined) size = this.getRi(4);
+      let ret = [];
+      for (let i = 0; i < size; i++) ret.push(this._getChar(noise[this.getRi(noise.length)]));
+      return ret;
+    };
+
+    _getChar(i) {
+      return String.fromCodePoint(i);
+    };
+
+    _arrayChunk([...array], size = 1) {
+      return array.reduce((acc, value, index) => index % size ? acc : [...acc, array.slice(index, index + size)], []);
+    }
+
+    _shuffle(arr) {
+      let i = arr.length;
+      let j = 0;
+      while (i) {
+        j = this.getRi(i--);
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
+    _unZip(lst) {
+      let ret = [];
+      lst.forEach((v, k) => {
+        if (typeof (v) == "number") {
+          ret.push(v);
+          return;
+        }
+        const kk = v.split("-");
+        for (let i = parseInt(kk[0]); i <= parseInt(kk[1]); i++) ret.push(i);
+      });
+      return ret;
+    }
+
+    _randomItem(rng, lst, size, ipop = false) {
+      let l = [];
+      l.push.apply(l, lst);
+      if (ipop) l = lst;
+      let ret = [];
+      while (ret.length < size) {
+        let idx = rng.choice(l);
+        ret.push(l[idx]);
+        l.splice(idx, 1);
+      }
+      return ret;
+    };
+
+    _hash2int(hash) {
+      let ret = 0;
+      [...hash].forEach((v, k) => {
+        if (v.charCodeAt(0) % 2 == 0) ret += 2 ** k;
+      });
+      return ret;
+    };
+
+    _hex(buffer) {
+      let hexCodes = [];
+      let view = new DataView(buffer);
+      for (let i = 0; i < view.byteLength; i += 4) {
+        const value = view.getUint32(i)
+        let stringValue = value.toString(16)
+        let padding = '00000000'
+        let paddedValue = (padding + stringValue).slice(-padding.length)
+        hexCodes.push(paddedValue);
+      }
+      return hexCodes.join("");
+    }
+
+    _getHash() {
+      const { _hex: hex } = this;
+      return this._crypto.subtle.digest("SHA-512", new TextEncoder("utf-8").encode(this._pwd)).then(function (hash) {
+        let str_hash = hex(hash);
+        return str_hash;
+      });
+    }
+
+    getRi(cnt, min = 0) {
+      if (min === 0) return Math.floor(Math.random() * cnt);
+      return Math.round(Math.random() * (cnt - min)) + min;
+    }
+
+    async _init_salt(callback) {
+      let hash = await this._getHash();
+      let noise = [];
+      noise.push.apply(noise, this._stdNoise);
+      let rng = new RNG(this._hash2int(hash.substr(32, 32)));
+      this._fCodes = this._randomItem(rng, noise, 256, true);
+      this._fNoise = this._shuffle(noise);
+      this._fiSalt = this._hash2int(hash.substr(64, 32));
+
+      noise = [];
+      noise.push.apply(noise, this._stdNoise);
+      rng = new RNG(this._hash2int(hash.substr(128 - 32)));
+      let rid = rng.nextRange(4);
+      this._bx = (rid === 1 || rid == 3) ? 32 : 64;
+      this._idx = this._randomItem(rng, this._bx === 32 ? this._b32 : this._b64, this._bx);
+      rng = new RNG(this._hash2int(hash.substr(0, 32)));
+      switch (rid) {
+        case 1:
+        case 2:
+          this._mode = "full";
+          this._codes = this._randomItem(rng, noise, 256, true);
+          break;
+        case 3:
+        default:
+          this._mode = "fit";
+          this._codes = this._randomItem(rng, noise, this._bx, true);
+          break;
+      }
+      this._noise = this._shuffle(noise);
+      callback && callback();
+    }
+
+    _xDestroy(arr) {
+      const { _rng: rng } = this;
+      let idx = arr.length;
+      let x = 0;
+      for (let v of arr) x ^= v;
+      [...x.toString(2).padStart(8, "0")].forEach((v, k) => {
+        let rid = rng.nextRange(idx);
+        if (rid == arr.length) return;
+        v = parseInt(v);
+        if (v === 0) {
+          arr[rid] &= 255 - (1 << (7 - k));
+          return;
+        }
+        arr[rid] |= 1 << (7 - k);
+      });
+      return arr;
+    }
+
+    _xRestore(arr) {
+      const { _rng: rng } = this;
+      let idx = arr.length;
+      for (let i = 0; i < 8; i++) {
+        let rid = rng.nextRange(idx);
+        if (rid == arr.length) continue;
+        let tmp = 0;
+        for (let v of arr) tmp ^= v & (2 ** (7 - i));
+        if (tmp === 0) {
+          arr[rid] &= 255 - (1 << (7 - i));
+          continue;
+        }
+        arr[rid] |= tmp;
+      }
+      return arr;
+    }
+
+    _b64encode(txt) {
+      const { _b64: b64 } = this;
+      let ret = [];
+      for (let v of this._arrayChunk(new TextEncoder("utf-8").encode(txt), 3)) {
+        ret.push(b64[v[0] >> 2], b64[((3 & v[0]) << 4) | this.getRi(15, 1)]);
+        if (v.length === 1) break; ret.pop();
+        ret.push(b64[((3 & v[0]) << 4) | (v[1] >> 4)], b64[((15 & v[1]) << 2) | this.getRi(3, 1)]);
+        if (v.length == 2) break; ret.pop();
+        ret.push(b64[((15 & v[1]) << 2) | (v[2] >> 6)], b64[63 & v[2]]);
+      };
+      return ret.join("");
+    }
+
+    _b64decode(stxt) {
+      const { _b64: b64 } = this;
+      let ret = [];
+      for (let v of this._arrayChunk([...stxt], 4)) {
+        v = v.filter(x => new Set(b64).has(x));
+        let b = b64.indexOf(v[1]);
+        ret.push((b64.indexOf(v[0]) << 2) | (b >> 4));
+        if (v.length === 2) break;
+        let g = b64.indexOf(v[2]);
+        ret.push((15 & b) << 4 | (g >> 2));
+        if (v.length === 3) break;
+        ret.push(((3 & g) << 6) | b64.indexOf(v[3]));
+      }
+      return new TextDecoder('utf-8').decode(new Uint8Array(ret));
+    }
+
+    _b32encode(txt) {
+      const { _b32: b32 } = this;
+      let ret = [];
+      for (let v of this._arrayChunk(new TextEncoder("utf-8").encode(txt), 5)) {
+        ret.push(b32[v[0] >> 3], b32[((7 & v[0]) << 2) | this.getRi(3)]);
+        if (v.length === 1) break; ret.pop();
+        ret.push(b32[((7 & v[0]) << 2) | (v[1] >> 6)], b32[(62 & v[1]) >> 1], b32[(1 & v[1]) << 4 | this.getRi(15)]);
+        if (v.length === 2) break; ret.pop();
+        ret.push(b32[((1 & v[1]) << 4) | (v[2] >> 4)], b32[((15 & v[2]) << 1) | this.getRi(1)]);
+        if (v.length === 3) break; ret.pop();
+        ret.push(b32[((15 & v[2]) << 1) | (v[3] >> 7)], b32[(124 & v[3]) >> 2], b32[(3 & v[3]) << 3 | this.getRi(7)]);
+        if (v.length == 4) break; ret.pop();
+        ret.push(b32[((3 & v[3]) << 3) | (v[4] >> 5)], b32[31 & v[4]]);
+      };
+      return ret.join("");
+    }
+
+    _b32decode(stxt) {
+      const { _b32: b32 } = this;
+      let ret = [];
+      for (let v of this._arrayChunk([...stxt], 8)) {
+        v = v.filter(x => new Set(b32).has(x));
+        let b = b32.indexOf(v[1]);
+        ret.push((b32.indexOf(v[0]) << 3) | (b >> 2));
+        if (v.length < 3) break;
+        let d = b32.indexOf(v[3]);
+        ret.push(((3 & b) << 6) | (b32.indexOf(v[2]) << 1) | (d >> 4));
+        if (v.length === 4) break;
+        let e = b32.indexOf(v[4]);
+        ret.push(((15 & d) << 4) | (e >> 1));
+        if (v.length === 5) break;
+        let z = b32.indexOf(v[5]);
+        ret.push((1 & e) << 7 | (z << 2));
+        if (v.length === 6) break; ret.pop();
+        let h = b32.indexOf(v[6]);
+        ret.push((1 & e) << 7 | (z << 2) | (h >> 3));
+        if (v.length === 7) break;
+        ret.push((h << 5) | b32.indexOf(v[7]));
+      }
+      return new TextDecoder('utf-8').decode(new Uint8Array(ret));
+    }
+
+    setPwd(pwd, callback) {
+      this._pwd = this._salt + pwd;
+      this._init_salt(callback);
+    }
+
+    setLv(lv = 0) {
+      this._lv = lv;
+    }
+
+    encode(txt, stxt) {
+      let s = [...(this._bx === 32 ? this._b32encode(stxt) : this._b64encode(stxt))];
+      let tmp = [];
+
+      console.log("encode b", this._bx, "  mode ", this._mode);
+      const { _idx: idxs } = this;
+      while (s.length) {
+        let idx = idxs.indexOf(s.shift());
+        if (idx == -1) continue;
+
+        let rnl = this.getRi(this._lv);
+        let tc = this._getChar(this._codes[idx]);
+        if (this._mode !== "fit") {
+          let gap = parseInt(256 / this._bx);
+          let rid = this.getRi(gap);
+          tc = this._getChar(this._codes[idx * gap + rid]);
+        }
+
+        if (rnl === 0) {
+          tmp.push(tc);
+          continue;
+        }
+        let tt = [];
+        tt.push(tc);
+        tt.push.apply(tt, this._getNoises(rnl));
+        tt = this._shuffle(tt);
+        tmp.push.apply(tmp, tt);
+      }
+      let ns = this._getNoises(this._bx === 32 ? 8 : 4);
+      for (let v of ns) tmp.splice(this.getRi(tmp.length), 0, v);
+      let nt = this._arrayChunk(tmp, Math.ceil(tmp.length / (txt.length - 1)));
+      let ret = [];
+      for (let i = 0; i < txt.length; i++) {
+        if (nt.length === 0) {
+          ret.push(txt.substr(i));
+          break;
+        }
+        ret.push(txt.substr(i, 1), nt.shift().join(""));
+      }
+      return ret.join("");
+    }
+
+    decode(stxt) {
+      console.log("decode b", this._bx, "  mode ", this._mode);
+      let ret = [];
+      let tmp = [...stxt];
+      const { _idx: idxs } = this;
+      while (tmp.length) {
+        let v = tmp.shift().codePointAt(0);
+        let idx = this._codes.indexOf(v);
+        if (idx == -1) continue;
+        let pos = this._mode === "fit" ? idx : parseInt(idx / (256 / this._bx));
+        ret.push(idxs[pos]);
+      }
+      let codes = ret.join("");
+      let s = this._bx === 32 ? this._b32decode(codes) : this._b64decode(codes);
+      return [s, codes];
+    }
+
+    fileEncode(txt, uiarr, size = 1024) {
+      this._rng = new RNG(this._fiSalt);
+      let tmp = [];
+      let s = this._arrayChunk(uiarr, size);
+      while (s.length) {
+        let hx = s.shift();
+        if (hx.length < 2) tmp.push(this._getChar(this._fCodes[hx[0]]));
+        else for (let v of this._xDestroy(hx)) tmp.push(this._getChar(this._fCodes[v]));
+        if (this._lv === 0) continue;
+        let rnl = this.getRi(this._lv);
+        if (rnl === 0) continue;
+        tmp.splice(this.getRi(tmp.length + size + 1, tmp.length - size), 0, this._getNoises(rnl, true).join(""));
+      }
+      tmp.splice(this.getRi(tmp.length), 0, this._getNoises(null, true).join(""));
+      let nt = this._arrayChunk(tmp, Math.ceil(tmp.length / (txt.length - 1)));
+      let ret = [];
+      for (let i = 0; i < txt.length - 1; i++) {
+        if (nt.length === 0) {
+          ret.push(txt.substr(i));
+          break;
+        }
+        ret.push(txt.substr(i, 1), nt.shift().join(""));
+      }
+      return ret.join("");
+    }
+
+    fileDecode(stxt, size = 1024) {
+      this._rng = new RNG(this._fiSalt);
+      let ret = [];
+      let tmp = [...stxt];
+      while (tmp.length) {
+        let v = tmp.shift().codePointAt(0);
+        let idx = this._fCodes.indexOf(v);
+        if (idx == -1) continue;
+        ret.push(idx);
+      }
+      let s = this._arrayChunk(ret, size);
+      let blob = [];
+      while (s.length) {
+        let dx = s.shift();
+        if (dx.length < 2) blob.push(dx[0]);
+        else for (let v of this._xRestore(dx)) blob.push(v);
+      }
+      return blob;
+    }
+  }
+
+  let msg = new Messenger();
+  const uc = window.URL || window.webkitURL;
+  let pwd = txt = htxt = stxt = dstxt = "";
+  let lv = 3;
+  let opt = "txt";
+  let view = null;
+  let mode = "encode"
+
+  function optChange(obj) {
+    opt = obj;
+    decode();
+  }
+
+  function lvChange(obj) {
+    lv = obj.value;
+    msg.setLv(lv);
+    encode();
+  }
+  function tabChange(obj) {
+    opt = "txt";
+    switch (obj.id) {
+      case "dc":
+        document.getElementById("ef").style.display = "none";
+        document.getElementById("df").style.display = "block";
+        mode = "decode";
+        break;
+      case "ec":
+        document.getElementById("df").style.display = "none";
+        document.getElementById("ef").style.display = "block";
+        mode = "encode";
+        break;
+    }
+    clearAll();
+  }
+
+  function PwdChange(obj) {
+    pwd = obj.value;
+    msg.setPwd(pwd, function () {
+      if (mode === "encode")
+        encode();
+      else
+        decode();
+    });
+  }
+
+  function getLen(str) {
+    let len = str.length;
+    for (let i = 0; i < len; i++) {
+      let charCode = str.charCodeAt(i);
+      if (charCode >= 0xD800 && charCode <= 0xDBFF) {
+        len--;
+        i++;
+      }
+    }
+    return len;
+  }
+
+  function changetxt(obj) {
+    let tmp = obj.value;
+    switch (obj.id) {
+      case "txt":
+        if (tmp == "") {
+          stxt, txt = "";
+          return 0;
+        }
+        document.getElementById("cl").innerHTML = "文本 长度:" + getLen(tmp);
+        txt = tmp;
+        encode();
+        break;
+      case "htxt":
+        opt = "txt";
+        document.getElementById("fileInput").value = null;
+        document.getElementById("img").style.display = "none";
+        document.getElementById("pro").value = 0;
+        if (tmp == "") {
+          stxt, htxt = "";
+          return 0;
+        }
+        htxt = tmp;
+        encode();
+        break;
+      case "dstxt":
+        if (tmp == "") {
+          dstxt = "";
+          return 0;
+        }
+        dstxt = tmp;
+        decode();
+        break;
+    }
+  }
+
+  function clearAll() {
+    dstxt = htxt = stxt = txt = "";
+    view = null;
+    lv = 3;
+    document.getElementById("lv").value = lv;
+    document.getElementById("txt").value = txt;
+    document.getElementById("htxt").value = txt;
+    document.getElementById("stxt").value = txt;
+    document.getElementById("rstxt").value = txt;
+    document.getElementById("dstxt").value = txt;
+    document.getElementById("fileInput").value = null;
+    document.getElementById("img").style.display = "none";
+    document.getElementById("pro").value = 0;
+    document.getElementById("ecp").textContent = "复制";
+    randomLv();
+  }
+
+  function randomLv() {
+    lv = msg.getRi(100, 1);
+    document.getElementById("lv").value = lv;
+    dp.value = lv;
+  }
+
+  function encode() {
+    switch (opt) {
+      case "txt":
+        if (txt === "" || htxt === "")
+          return 0;
+        stxt = msg.encode(txt, htxt);
+        break;
+      case "blob":
+        if (txt === "")
+          return 0;
+        stxt = msg.fileEncode(txt, view);
+        break;
+    }
+    document.getElementById("stxt").value = stxt;
+    document.getElementById("ecp").textContent = "复制 隐写文本长度:" + getLen(stxt);
+  }
+
+  function decode() {
+    if (dstxt === "")
+      return 0;
+    let k = null;
+    switch (opt) {
+      case "txt":
+        k = msg.decode(dstxt);
+        document.getElementById("rstxt").value = k[0];
+        break;
+      case "blob":
+        k = msg.fileDecode(dstxt);
+        view = new Uint8Array(k);
+        const a = document.createElement('a');
+        a.href = uc.createObjectURL(new Blob([view.buffer]));
+        a.download = new Date().toUTCString();
+        document.documentElement.appendChild(a)
+        a.click()
+        document.documentElement.removeChild(a)
+        break;
+    }
+  }
+
+  document.getElementById('fileInput').addEventListener('change', function selectedFileChanged() {
+    if (this.files.length === 0) return;
+    let iPic = this.files[0]['type'].indexOf("image/") > -1;
+    const reader = new FileReader();
+    let p = document.getElementById("pro");
+    reader.onprogress = function (event) {
+      if (event.lengthComputable) {
+        p.max = event.total;
+        p.value = event.loaded;
+      }
+    };
+
+    reader.onloadend = function (event) {
+      let content = event.target.result;
+      p.value, p.max = 1;
+      view = new Uint8Array(content);
+      if (iPic) {
+        document.getElementById("img").src = uc.createObjectURL(new Blob([view.buffer]));
+        document.getElementById("img").style.display = "block";
+      }
+      htxt = "";
+      document.getElementById("htxt").value = "";
+      opt = "blob";
+      encode();
+    };
+    reader.readAsArrayBuffer(this.files[0]);
+  });
+
+  const cpo = (obj) => {
+    if (obj) {
+      if (window.clipboardData) {
+        const value = obj.value;
+        const result = window.clipboardData.setData('Text', value);
+        if (result) return alert('Copied:' + value);
+      }
+      if (!/(iPhone|iPad|iPod|iOS)/i.test(window.navigator.userAgent)) {
+        obj.select();
+      } else {
+        obj.setSelectionRange(0, obj.value.length);
+      }
+      if (document.execCommand('copy')) {
+        document.execCommand('copy');
+        return alert('Copied:' + obj.value);
+      }
+      obj.select();
+      obj.setSelectionRange(0, obj.value.length);
+    }
+    return alert('复制失败，请手动复制');
+  }
+
+  function cp(obj) {
+    var ct = null;
+    switch (obj.id) {
+      case "ecp":
+        ct = document.getElementById("stxt")
+    }
+    cpo(ct);
+  }
+
+  clearAll();
+
+</script>
+
+</html>
