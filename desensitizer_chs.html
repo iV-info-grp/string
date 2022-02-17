@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>脱敏疗法</title>
+</head>
+<style>
+  .fs {
+    width: 99%;
+  }
+</style>
+
+<body>
+  <div>
+    <h4>本程序用于增加敏感词检测与数据清洗难度，没有网络请求可直接保存html本地运行</h4>
+    <div id="p"></div>
+    <form autocomplete="off" onsubmit="return false;">
+      <div>
+        <p>字数限制（例如：推特70字限制，0或空不分割） 难度越高编码后长度越长</p>
+        <input id="lmt" type="number" oninput="lmtChange(this)">
+        <input type="radio" id="random" name="mode" onclick="lvChange(0)" checked="true">
+        <label for="random">简单</label>
+        <input type="radio" id="easy" name="mode" onclick="lvChange(1)">
+        <label for="easy">低等</label>
+        <input type="radio" id="middel" name="mode" onclick="lvChange(2)">
+        <label for="middel">中等</label>
+        <input type="radio" id="hard" name="mode" onclick="lvChange(3)">
+        <label for="hard">高等</label>
+        <button onclick="cleartxt()">清空</button>
+      </div>
+      <div>
+        <p id="cl">文本</p>
+        <textarea class="fs" id="txt" rows="10" oninput="changetxt(this)"></textarea>
+      </div>
+    </form>
+    <div id="pa"></div>
+  </div>
+</body>
+<template id="tpl">
+  <div>
+    <p>
+      <button class="fs" onclick="cp(this)"></button>
+    </p>
+    <div>
+      <textarea class="fs" rows="3"></textarea>
+    </div>
+  </div>
+</template>
+<script>
+  const encoder = function (txt, lv, lmt) {
+    const stdCs = [173, "6068-6069", "6155-6158", "8203-8207", "8234-8238",
+      "8288-8303", "65024-65039", 65279, "119155-119162", 917505,
+      "917536-917631", "917760-917999"];
+    const oc = ["8206-8207", "8234-8238", "8294-8297", 65279,
+      "6155-6158", 8292, "917505-917600", "917627-917630"];
+    const zms = [[40, 41], [60, 62], [91, 93], [123, 125], [65288, 65289],
+    [65308, 65310], [65339, 65341], [65371, 65373]];
+    let ms = {};
+    let noise = [];
+
+    const unZip = function (lst) {
+      let arr = [];
+      lst.forEach((v, k) => {
+        if (typeof (v) == "number") {
+          arr.push(v);
+          return;
+        }
+        const kk = v.split("-");
+        for (let i = parseInt(kk[0]); i <= parseInt(kk[1]); i++) {
+          arr.push(i);
+        }
+
+      });
+      return arr;
+    }
+
+    const arrayChunk = ([...array], size = 1) => {
+      return array.reduce((acc, value, index) => index % size ? acc : [...acc, array.slice(index, index + size)], []);
+    }
+
+    const shuffle = function (arr) {
+      let i = arr.length;
+      let j = 0;
+      while (i) {
+        j = Math.floor(Math.random() * i--);
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
+
+    const getNoise = function () {
+      return getChar(noise[Math.floor(Math.random() * noise.length)]);
+    };
+
+    const getChar = function (i) {
+      return String.fromCodePoint(i);
+    };
+
+    const getRS = function (strict = true) {
+      if (strict) {
+        return shuffle([[8294, 8297], [8296, 8297]]).pop();
+      }
+      return [8206, 8206];
+      const rs = shuffle([[8206, 8206], [8294, 8297], [8296, 8297]]).pop();
+      return [rs[0], rs[parseInt(Math.random() * 2, 10)]];
+    }
+
+    const swap2chars = function (t0, t1) {
+      let ret = [];
+      let rs = getRS(false);
+      ret.push(getChar(rs[0]));
+      if (parseInt(Math.random() * 2, 10) == 1 || true) {
+        ret.push(getChar(8238)); //RLO
+        ret.push(channgeSmybol(t1));
+        ret.push(getNoise());
+        ret.push(channgeSmybol(t0));
+        ret.push(getChar(8236)); //PDF
+      } else {
+        ret.push(t0);
+        ret.push(getNoise());
+        ret.push(t1);
+      }
+      ret.push(getChar(rs[1]));
+      return ret;
+    };
+
+    const swap3chars = function (t0, t1, t2) {
+      const rid = shuffle([0, 1, 2]).join("");
+
+      let ret = [];
+      switch (rid) {
+        case "012":
+          ret.push(t0);
+          ret.push(getNoise());
+          ret.push(t1);
+          ret.push(getNoise());
+          ret.push(t2);
+          break;
+        case "021":
+          ret.push(t0);
+          ret.push.apply(ret, swap2chars(t1, t2));
+          break;
+        case "102":
+          ret = swap2chars(t0, t1);
+          ret.push(t2);
+          break;
+        case "120":
+          t0 = channgeSmybol(t0);
+          ret.push(getChar(8294)); //LRI
+          ret.push(getChar(8238)); //RLO
+          ret.push(getChar(8294)); //LRI
+          ret.push(t1);
+          ret.push(getNoise());
+          ret.push(t2);
+          ret.push(getChar(8236)); //PDF
+          ret.push(getChar(8297)); //PDI
+          ret.push(t0);
+          ret.push(getChar(8297)); //PDI
+          break;
+        case "201":
+          ret.push(getChar(8294)); //LRI
+          ret.push(getChar(8238)); //RLO
+          ret.push(t2);
+          ret.push(getChar(8237)); //LRO
+          ret.push(t0);
+          ret.push(getNoise());
+          ret.push(t1);
+          ret.push(getChar(8236)); //PDF
+          ret.push(getChar(8236)); //PDF
+          ret.push(getChar(8297)); //PDI
+          break;
+        default:
+          t0 = channgeSmybol(t0);
+          t1 = channgeSmybol(t1);
+          t2 = channgeSmybol(t2);
+          ret.push(getChar(8294)); //LRI
+          ret.push(getChar(8238)); //RLO
+          ret.push(t2);
+          ret.push(getNoise());
+          ret.push(t1);
+          ret.push(getNoise());
+          ret.push(t0);
+          ret.push(getChar(8236)); //PDF
+          ret.push(getChar(8297)); //PDI
+
+          break;
+      }
+      return ret;
+    };
+
+    const elv0 = function () {
+      const tmp = [...txt];
+      let chars = [];
+      if (lmt != 0) {
+        chars = arrayChunk(tmp, parseInt((lmt - 5) / 2));
+      } else {
+        chars = [tmp];
+      }
+      let ret = [];
+      chars.forEach((v, i) => {
+        let ll = [];
+        v.forEach((s, ii) => {
+          ll.push(s);
+          ll.push(getNoise());
+        });
+        ret.push(ll.join(""));
+      });
+      return ret;
+    };
+
+    const elv1 = function () {
+      const tmp = [...txt];
+      let chars = [];
+      if (lmt != 0) {
+        chars = arrayChunk(tmp, lmt - 10)
+      } else {
+        chars = [tmp];
+      }
+      let ret = [];
+      chars.forEach((v) => {
+        v.forEach((vv, k) => {
+          v[k] = channgeSmybol(vv);
+        });
+        v.reverse();
+        const rs = getRS(false);
+        let tt = [];
+        tt.push(getChar(rs[0]));
+        tt.push(getChar(8238)); //RLO
+        tt.push(v.join(""));
+        tt.push(getChar(8236)); //PDF
+        tt.push(getChar(rs[1]));
+        ret.push(tt.join(""));
+      });
+      return ret;
+    };
+
+    const elv2 = function () {
+      let ret = [];
+      const tt = [...txt];
+      tmp = [];
+      do {
+        let t = [];
+        if (tt.length > 1) {
+          t = swap2chars(tt.shift(), tt.shift())
+        } else {
+          t.push(getNoise());
+          t.push(tt.shift());
+        }
+        if (lmt != 0 && lmt < (tmp.length + t.length + 10)) {
+          ret.push(tmp.join(""));
+          tmp = t;
+        } else {
+          tmp.push.apply(tmp, t);
+        }
+      } while (tt.length > 0);
+
+      if (tmp.length > 0) {
+        ret.push(tmp.join(""));
+      }
+      return ret;
+    };
+
+    const elv3 = function () {
+      let ret = [];
+      const tt = [...txt];
+      tmp = [];
+      do {
+        let t = [];
+        if (tt.length == 1) {
+          t.push(getNoise());
+          t.push(tt.shift());
+        } else {
+          if (tt.length > 2 || parseInt(Math.random() * 2, 10) == 1) {
+            t = swap3chars(tt.shift(), tt.shift(), tt.shift());
+          } else {
+            t = swap2chars(tt.shift(), tt.shift());
+          }
+        }
+        if (lmt != 0 && lmt < (tmp.length + t.length + 10)) {
+          ret.push(tmp.join(""));
+          tmp = t;
+        } else {
+          tmp.push.apply(tmp, t);
+        }
+      } while (tt.length > 0);
+
+      if (tmp.length > 0) {
+        ret.push(tmp.join(""));
+      }
+      return ret;
+    };
+
+    const channgeSmybol = function (c) {
+      if (!(c.codePointAt(0) in ms)) {
+        return c;
+      }
+      return getChar(ms[c.codePointAt(0)]);
+    };
+
+    const init = function () {
+      noise = unZip(stdCs);
+      const ocs = unZip(oc);
+      noise.filter(x => new Set(ocs).has(x)).forEach((v, k) => {
+        let idx = noise.indexOf(v);
+        if (idx > -1) {
+          noise.splice(idx, 1);
+        }
+      });
+
+      zms.forEach((v) => {
+        ms[v[0]] = v[1];
+        ms[v[1]] = v[0];
+      });
+    };
+    init();
+
+    let ret = [];
+    switch (lv) {
+      case 0:
+        ret = elv0();
+        break;
+      case 1:
+        ret = elv1();
+        break;
+      case 2:
+        ret = elv2();
+        break
+      case 3:
+        ret = elv3();
+        break
+      default:
+        ret = elv0();
+        break;
+    }
+    return ret;
+  };
+
+  var lmt = 0;
+  var txt = "";
+  var lv = 0;
+
+  function getLen(str) {
+    let len = str.length;
+    for (let i = 0; i < len; i++) {
+      let charCode = str.charCodeAt(i);
+      if (charCode >= 0xD800 && charCode <= 0xDBFF) {
+        len--;
+        i++;
+      }
+    }
+    return len;
+  }
+
+  function lmtChange(obj) {
+    let tmp = obj.value;
+    if (tmp === "") {
+      lmt = 0;
+    } else {
+      lmt = tmp;
+    }
+    txt = document.getElementById("txt").value;
+    encode();
+  }
+
+  function lvChange(l) {
+    lv = l;
+    encode();
+  }
+
+  function changetxt(obj) {
+    let tmp = obj.value;
+    document.getElementById("cl").innerHTML = "文本 长度:" + getLen(tmp);
+    if (tmp == "") {
+      txt = "";
+      return 0;
+    }
+    txt = tmp;
+    lmt = document.getElementById("lmt").value;
+    encode();
+  }
+
+  function cleartxt() {
+    txt = "";
+    document.getElementById("txt").value = txt;
+    document.getElementById("pa").innerHTML = "";
+    document.getElementById("cl").innerHTML = "文本";
+  }
+
+  function encode() {
+    document.getElementById("pa").innerHTML = "";
+    if (txt.length < 2)
+      return 0;
+
+    let ret = encoder(txt, lv, lmt);
+
+    let pav = document.getElementById("pa");
+    ret.forEach((v, i) => {
+      let p = "-p" + (i + 1);
+      if (ret.length == 1) {
+        p = "";
+      }
+      let tpl = document.querySelector('#tpl');
+      let cnt = getLen(v + p);
+      tpl.content.querySelector('button').textContent = "复制 文本长度:" + cnt;
+      tpl.content.querySelector('textarea').value = v + p;
+      pav.appendChild(tpl.content.cloneNode(true));
+    });
+  }
+
+  const cpo = (obj) => {
+    if (obj) {
+      if (window.clipboardData) {
+        const value = obj.value;
+        const result = window.clipboardData.setData('Text', value);
+        if (result) return alert('Copied:' + value);
+      }
+      if (!/(iPhone|iPad|iPod|iOS)/i.test(window.navigator.userAgent)) {
+        obj.select();
+      } else {
+        obj.setSelectionRange(0, obj.value.length);
+      }
+      if (document.execCommand('copy')) {
+        document.execCommand('copy');
+        return alert('Copied:' + obj.value);
+      }
+    }
+    return alert('复制失败，请手动复制');
+  }
+
+  function cp(obj) {
+    var ct = obj.parentNode.parentNode.children[1].children[0];
+    cpo(ct);
+    ct.select();
+    ct.setSelectionRange(0, 99999);
+  }
+</script>
+
+</html>
