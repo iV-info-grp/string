@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Message Sharing</title>
+</head>
+<style>
+  .fs {
+    width: 99%;
+  }
+</style>
+
+<body>
+  <div id="ef" style="display: inline;">
+    <button class="fs" id="dc" onclick="tabChange(this)">switch to Merge</button>
+    <h4>This tools Split Message customize parts,without network request</h4>
+    <form autocomplete="off" onsubmit="return false;">
+      <div>
+        Split times: <output id="dp" for="part"></output><input type="range" id="part" min="2" max="255" step="1"
+          value="5" onchange="dp.value=this.value;chgCnt(this)">(Message split count)
+      </div>
+
+      <div>
+        Require: <output id="de" for="need"></output><input type="range" id="need" min="1" max="5" step="1" value="3"
+          onchange="de.value=this.value;chgNeed(this)">(Restore message minimun parts)
+      </div>
+
+      <div>
+        Password<input id="pwde" placeholder="do not use 123 or password" oninput="chgPwd(this)">
+        <button onclick="clearAll()">clear</button>
+        <p id="lab_txt">Text</p>
+      </div>
+
+      <div>
+        <textarea class="fs" rows="3" id="txt" oninput="chgTxt(this)" placeholder="Sharing Message"></textarea>
+      </div>
+    </form>
+
+    <div>
+      <h5>Sharing Parts</h5>
+      <div id="shares"></div>
+    </div>
+  </div>
+
+  <div id="df" style="display: none;">
+    <button class="fs" id="ec" onclick="tabChange(this)">switch to Split</button>
+    <h4>This tools merge minimux parts to restore msg,without network request</h4>
+    <form autocomplete="off" onsubmit="return false;">
+      Password<input id="pwdd" oninput="chgPwd(this)">
+      <button onclick="clearAll()">clear</button>
+    </form>
+    <div>
+
+      <p>Sharing Parts,pre line</p>
+      <textarea class="fs" id="stxt" wrap="off" oninput="chgTxt(this)" placeholder="paste part pre line"></textarea>
+    </div>
+    <div>
+      <p>Message </p>
+      <textarea class="fs" id="rtxt"></textarea>
+    </div>
+  </div>
+</body>
+
+<template id="tpl">
+  <div>
+    <p>
+      <button class="fs" onclick="cp(this)"></button>
+    </p>
+    <div>
+      <textarea class="fs" rows="3"></textarea>
+    </div>
+  </div>
+</template>
+
+<!-- random -->
+<script>
+  class Random {
+    _bits = 16;
+    _s = new Array(this._bits);
+    _p;
+
+    constructor(seed) {
+      this.setSeed(seed);
+    }
+
+    setSeed(seed = 0n) {
+      seed = seed === 0n ? BigInt(Math.round(new Date().getTime() * Math.random() * 0xffffffff)) : seed;
+      this._p = 0;
+      for (let k = this._bits; k--;) {
+        this._s[k] = this._splitmix64(seed + BigInt(k));
+      }
+    }
+
+    _splitmix64(idx = 0n) {
+      let z = idx + BigInt(0x9E3779B97F4A7C15);
+      z = (z ^ (z >> 30n)) * BigInt(0xBF58476D1CE4E5B9);
+      z = (z ^ (z >> 27n)) * BigInt(0x94D049BB133111EB);
+      return z ^ (z >> 31n);
+    }
+
+    nextInt(m = null) {
+      let s0 = this._s[this._p];
+      let s1 = this._s[this._p = (this._p + 1) & (this._bits - 1)];
+      let ret = s0 + s1;
+      if (m) ret = ret % BigInt(m);
+      s1 ^= s1 << 31n;
+      this._s[this._p] = s1 ^ s0 ^ (s1 >> 11n) ^ (s0 >> 30n);
+      return parseInt(ret & BigInt(Number.MAX_SAFE_INTEGER));
+    }
+
+    nextFloat() {
+      return this.nextInt() / (Number.MAX_SAFE_INTEGER - 1);
+    }
+
+    nextString() {
+      return this.nextInt().toString(36);
+    }
+
+    nextRange(end, start = 0) {
+      return start + this.nextInt(end - start);
+    }
+
+    choice(arr) {
+      return this.nextRange(arr.length - 1);
+    }
+
+  }
+</script>
+
+<!-- Shamir -->
+<script>
+  // part of https://github.com/amper5and/secrets.js/ Copyright (c) 2012 Alexander Stetsyuk
+  class Shamir {
+    _salt = "author_" + "编程远去，随想不灭-js00000005-ver.1";
+    _std = ["65-90", "97-122", "48-57", 43, 47];
+    _charset = [];
+    _idx = [];
+    _htmlsalt = "";
+    _pwd = "";
+    _crypto = window.crypto || window.webkitCrypto ||
+      window.mozCrypto || window.oCrypto || window.msCrypto;
+
+    _logs = [];
+    _exps = [];
+    _rids = [];
+
+    _idPos = 0;
+    _idXor = 0;
+    _idIdx = [];
+
+    constructor(pwd = "", withHtml = false) {
+      if (withHtml) this._htmlsalt = document.documentElement.outerHTML;
+      this._init();
+      this.setPwd(pwd);
+    }
+
+    _init() {
+      for (let v of this._unZip(this._std)) this._charset.push(String.fromCharCode(v));
+      let x = 1;
+      for (let i = 0; i < 256; i++) {
+        this._exps[i] = x;
+        this._logs[x] = i;
+        x <<= 1;
+        if (x < 256) continue;
+        x = (x ^ 29) & 255;
+      }
+      for (let i = 255; i--;) {
+        this._rids[i] = i;
+      }
+    }
+
+    _hex(buffer) {
+      let hexCodes = [];
+      let view = new DataView(buffer);
+      for (let i = 0; i < view.byteLength; i += 4) {
+        const value = view.getUint32(i);
+        let stringValue = value.toString(16);
+        let padding = '00000000';
+        let paddedValue = (padding + stringValue).slice(-padding.length);
+        hexCodes.push(paddedValue);
+      }
+      return hexCodes.join("");
+    }
+
+    _getHash() {
+      const { _hex: hex } = this;
+      return this._crypto.subtle.digest("SHA-512", new TextEncoder("utf-8").encode(this._pwd)).then(function (hash) {
+        let str_hash = hex(hash);
+        return str_hash;
+      });
+    }
+
+    _randomItem(rng, lst, size, ipop = false) {
+      let l = [];
+      l.push.apply(l, lst);
+      if (ipop) l = lst;
+      let ret = [];
+      while (ret.length < size) {
+        let idx = rng.nextInt(l.length);
+        ret.push(l[idx]);
+        l.splice(idx, 1);
+      }
+      return ret;
+    };
+
+    async _init_salt(callback) {
+      let hash = await this._getHash();
+      let rng = new Random(this._str2BigInt(hash.slice(0, 32)));
+      this._idx = this._randomItem(rng, this._charset, 64);
+
+      rng.setSeed(this._str2BigInt(hash.slice(32, 64)));
+      this._idIdx = this._randomItem(rng, this._charset, 64);
+      this._idPos = rng.nextInt();
+
+      rng.setSeed(this._str2BigInt(hash.slice(64)));
+      this._idXor = rng.nextInt();
+
+      callback && callback();
+    }
+
+    setPwd(pwd, callback) {
+      this._pwd = this._salt + pwd + this._htmlsalt;
+      this._init_salt(callback);
+    }
+
+    _str2BigInt(txt) {
+      let bytes = new TextEncoder("utf-8").encode(txt);
+      let value = 0n;
+      for (let i = bytes.length; i--;) {
+        value = (value << 8n) | BigInt(bytes[i]);
+      }
+      return value;
+    }
+
+    _unZip(lst) {
+      let ret = [];
+      lst.forEach((v, k) => {
+        if (typeof (v) == "number") {
+          ret.push(v);
+          return;
+        }
+        const kk = v.split("-");
+        for (let i = parseInt(kk[0]); i <= parseInt(kk[1]); i++) ret.push(i);
+      });
+      return ret;
+    }
+
+    _x2Bytes(xStr, x = 64, idx = this._idx) {
+      let sum = BigInt(0);
+      let c = BigInt(1);
+      let charset = idx.slice(0, x);
+      x = BigInt(x);
+      for (let i = xStr.length; i--;) {
+        let idx = charset.indexOf(xStr.charAt(i));
+        if (idx === -1) continue;
+        sum += c * BigInt(idx);
+        c *= x;
+      }
+
+      let bytes = [];
+      while (sum > 0) {
+        bytes.push(parseInt(sum & 255n));
+        sum >>= 8n;
+      }
+      return bytes;
+    }
+
+    _bytes2x(bytes, x = 64, idx = this._idx) {
+      let charset = idx.slice(0, x);
+      x = BigInt(x);
+      let bi = 0n;
+      for (let i = bytes.length; i--;) {
+        bi = (bi << 8n) | BigInt(bytes[i]);
+      }
+      if (bi === 0n) return charset[0]
+      let ret = "";
+      while (bi != 0n) {
+        let b = bi % x;
+        ret = charset[parseInt(b)] + ret;
+        bi = (bi - b) / x;
+      }
+      return ret;
+    }
+
+    _horner(x, coeffs) {
+      let logx = this._logs[x];
+      let fx = 0;
+      for (let i = coeffs.length - 1; i >= 0; i--) {
+        if (fx === 0) {
+          fx = coeffs[i];
+          continue;
+        }
+        fx = this._exps[(logx + this._logs[fx]) % 255] ^ coeffs[i];
+      }
+      return fx;
+    }
+
+    _getRid() {
+      let rid = this._crypto.getRandomValues(new Uint8Array(1))[0];
+      return rid;
+    }
+
+    _getShares(secret, ids, threshold) {
+      let coeffs = [secret];
+      for (let i = 1; i < threshold; i++) {
+        coeffs[i] = this._getRid();
+      }
+      let shares = {};
+      for (let j = ids.length; j--;) {
+        let id = ids[j];
+        shares[id] = this._horner(id + 1, coeffs);
+      }
+      return shares;
+    }
+
+    _encodeId(id) {
+      let xid = id ^ (this._idXor & 255);
+      let rid = this._getRid() & 15;
+      if (rid === 0) rid += 2 ** ((this._getRid() % 3));
+      let nid = (rid << 8) + xid;
+      return this._bytes2x([nid], 64, this._idIdx);
+    }
+
+    _decodeId(strId) {
+      let xid = this._x2Bytes(strId, 64, this._idIdx)[0];
+      let id = xid ^ (this._idXor & 255);
+      return id;
+    }
+
+    _pack(x) {
+      let ret = [];
+      for (let i in x) {
+        i = parseInt(i);
+        let id = this._encodeId(i + 1);
+        let data = this._bytes2x(x[i]);
+        let pos = this._idPos % data.length;
+        let txt = data.slice(0, pos) + id + data.slice(pos);
+        ret.push(txt);
+      }
+      return ret;
+    }
+
+    _unpack(share) {
+      share = share.trim();
+      let pos = this._idPos % (share.length - 2);
+      let strId = share.slice(pos, pos + 2);
+      let id = this._decodeId(strId);
+      share = share.substr(0, pos) + share.substr(pos + 2);
+      if (!share.length) return null;
+      return [id, this._x2Bytes(share)];
+    }
+
+    _lagrange(x, y, at = 0) {
+      let sum = 0;
+      let len = x.length;
+      for (let i = len; i--;) {
+        if (!y[i]) continue;
+        let product = this._logs[y[i]];
+        for (let j = len; j--;) {
+          if (i === j) continue;
+          if (at === x[j]) {
+            product = -1;
+            break;
+          }
+          product = (product + this._logs[at ^ x[j]] - this._logs[x[i] ^ x[j]] + 255) % 255;
+        }
+        sum = product === -1 ? sum : sum ^ this._exps[product];
+      }
+      return sum;
+    }
+
+    share(str, numShares = 5, threshold = 3) {
+      let bytes = new TextEncoder("utf-8").encode(str);
+      return this.bshare(bytes, numShares, threshold);
+    }
+
+    bshare(bytes, numShares = 5, threshold = 3) {
+      let ids = this._randomItem(new Random(), this._rids, numShares);
+      let y = {};
+      for (let i = bytes.length; i--;) {
+        let subShares = this._getShares(bytes[i], ids, threshold);
+        for (let j = ids.length; j--;) {
+          let id = ids[j];
+          if (y[id]) {
+            y[id].push(subShares[id]);
+            continue;
+          }
+          y[id] = [subShares[id]];
+        }
+      }
+      return this._pack(y);
+    }
+
+    combine(shares) {
+      shares = shares.filter(function (e) { return e.replace(/(\r\n|\n|\r)/gm, "") });
+      let bytes = this.bcombine(shares);
+      return new TextDecoder('utf-8').decode(new Uint8Array(bytes));
+    }
+
+    bcombine(shares) {
+      let setBits, share, x = [], y = [];
+      for (let i = shares.length; i--;) {
+        share = this._unpack(shares[i]);
+        if (share === null || x.includes(share[0])) continue;
+        let idx = x.push(share[0]) - 1;
+        share = share[1];
+        for (let j = share.length; j--;) {
+          y[j] = y[j] || [];
+          y[j][idx] = share[j];
+        }
+      }
+      let bytes = [];
+      for (let i = y.length; i--;) {
+        bytes.push(this._lagrange(x, y[i]));
+      }
+      return bytes;
+    }
+  }
+</script>
+
+<script>
+  let share_data = null;
+  let minPart = 3;
+  let part = 5;
+  let txt = "";
+  let stxt = "";
+  let mode = "encode";
+  let sha;
+  let pwd = "";
+
+  function clearAll() {
+    share_data = null;
+    txt = "";
+    stxt = "";
+    document.getElementById("txt").value = "";
+    document.getElementById("stxt").value = "";
+    document.getElementById("rtxt").value = "";
+    shares.innerHTML = "";
+    displayTXTInfo();
+  }
+
+  function init() {
+    clearAll();
+    sha = new Shamir();
+    minPart = 3;
+    part = 5;
+    document.getElementById("part").value = part;
+    document.getElementById("need").value = minPart;
+    dp.value = part;
+    de.value = minPart;
+  }
+
+  function chgPwd(obj) {
+    pwd = obj.value;
+    sha.setPwd(pwd, function () {
+      if (mode === "encode")
+        encode();
+      else
+        decode();
+    });
+  }
+
+  function tabChange(obj) {
+    switch (obj.id) {
+      case "dc":
+        document.getElementById("ef").style.display = "none";
+        document.getElementById("df").style.display = "block";
+        mode = "decode";
+        break;
+      case "ec":
+        document.getElementById("df").style.display = "none";
+        document.getElementById("ef").style.display = "block";
+        mode = "encode";
+        break;
+    }
+    document.getElementById("pwde").value = "";
+    document.getElementById("pwdd").value = "";
+
+    sha.setPwd("");
+
+    clearAll();
+  }
+
+  function chgCnt(obj) {
+    part = parseInt(obj.value);
+    dp.value = part;
+    need.max = part;
+    if (minPart >= part) {
+      minPart = part;
+      de.value = part;
+    }
+    encode();
+  }
+
+  function chgNeed(obj) {
+    minPart = parseInt(obj.value);
+    de.value = minPart;
+    encode();
+  }
+
+  function displayTXTInfo() {
+    lab_txt.innerHTML = "Text size:" + (txt.length);
+  }
+
+  function chgTxt(obj) {
+    let tmp = obj.value;
+    if (tmp === "") {
+      clearAll();
+      return;
+    }
+
+    if (mode === "encode") {
+      txt = tmp;
+      shares.innerHTML = "";
+      displayTXTInfo();
+      clearTimeout(this.timer);
+      this.timer = setTimeout(function () {
+        encode();
+      }, 200);
+      return;
+    }
+    stxt = tmp;
+    decode();
+  }
+
+  function encode() {
+    shares.innerHTML = "";
+    if (!txt) return;
+    share_data = sha.share(txt, part, minPart);
+    showShares();
+  }
+
+  function showShares() {
+    for (let i = share_data.length; i--;) {
+      let str = share_data[i];
+      let tpl = document.querySelector('#tpl');
+      tpl.content.querySelector('button').textContent = "Copy text size:" + str.length;
+      tpl.content.querySelector('textarea').value = str;
+      shares.appendChild(tpl.content.cloneNode(true));
+    }
+  }
+
+  function decode() {
+    if (!stxt) return;
+    let ret = sha.combine(stxt.split("\n"));
+    rtxt.value = ret;
+  }
+
+  const cpo = (obj) => {
+    if (obj) {
+      if (window.clipboardData) {
+        const value = obj.value;
+        const result = window.clipboardData.setData('Text', value);
+        if (result) return alert('Copied:' + value);
+      }
+      if (!/(iPhone|iPad|iPod|iOS)/i.test(window.navigator.userAgent)) {
+        obj.select();
+      } else {
+        obj.setSelectionRange(0, obj.value.length);
+      }
+      if (document.execCommand('copy')) {
+        document.execCommand('copy');
+        return alert('Copied:' + obj.value);
+      }
+    }
+    return alert('Copy Failed');
+  }
+
+  function cp(obj) {
+    var ct = obj.parentNode.parentNode.children[1].children[0];
+    cpo(ct);
+    ct.select();
+    ct.setSelectionRange(0, 99999);
+  }
+
+  init();
+
+</script>
+
+</html>
